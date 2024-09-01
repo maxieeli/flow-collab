@@ -213,3 +213,168 @@ impl MapRefExtension for MapRefWrapper {
         &self.map_ref
     }
 }
+
+/// A trait defining an interface for interacting with a map reference.
+/// It provides various methods to insert and retrieve different data types to/from the map,
+/// leveraging transactions for maintaining consistency.
+pub trait MapRefExtension {
+    fn map_ref(&self) -> &MapRef;
+
+    fn create_array_with_txn<V: Into<In>>(
+        &self,
+        txn: &mut TransactionMut,
+        key: &str,
+        values: Vec<V>,
+    ) -> ArrayRef {
+        self.map_ref().insert(txn, key, ArrayPrelim::from(values))
+    }
+
+    fn insert_with_txn<V: Prelim>(&self, txn: &mut TransactionMut, key: &str, value: V) {
+        self.map_ref().insert(txn, key, value);
+    }
+
+    fn insert_str_with_txn<T: ToString>(&self, txn: &mut TransactionMut, key: &str, value: T) {
+        self
+            .map_ref()
+            .insert(txn, key, Any::String(Arc::from(value.to_string())));
+    }
+
+    fn insert_i64_with_txn<T: Into<i64>>(&self, txn: &mut TransactionMut, key: &str, value: T) {
+        self.map_ref().insert(txn, key, Any::BigInt(value.into()));
+    }
+
+    fn insert_f64_with_txn(&self, txn: &mut TransactionMut, key: &str, value: f64) {
+        self.map_ref().insert(txn, key, Any::Number(value));
+    }
+
+    fn insert_bool_with_txn<K: AsRef<str>>(&self, txn: &mut TransactionMut, key: K, value: bool) {
+        self.map_ref().insert(txn, key.as_ref(), Any::Bool(value));
+    }
+
+    fn create_map_with_txn(&self, txn: &mut TransactionMut, key: &str) -> MapRef {
+        let map = MapPrelim::default();
+        self.map_ref().insert(txn, key, map)
+    }
+
+    fn get_array_ref_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<ArrayRef> {
+        self
+            .map_ref()
+            .get(txn, key)
+            .map(|value| value.to_yarray().cloned())?
+    }
+
+    fn get_map_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<MapRef> {
+        self
+            .map_ref()
+            .get(txn, key)
+            .map(|value| value.to_ymap().cloned())?
+    }
+
+    fn get_any_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<Any> {
+        self.map_ref().get(txn, key).and_then(|value| match value {
+            YrsValue::Any(any) => Some(any),
+            _ => None,
+        })
+    }
+
+    fn get_or_create_map_with_txn(&self, txn: &mut TransactionMut, key: &str) -> MapRef {
+        self
+            .get_map_with_txn(txn, key)
+            .unwrap_or_else(|| self.create_map_with_txn(txn, key))
+    }
+
+    fn create_map_if_not_exist_with_txn(&self, txn: &mut TransactionMut, key: &str) -> MapRef {
+        match self
+            .map_ref()
+            .get(txn, key)
+            .and_then(|value| value.to_ymap().cloned())
+        {
+            None => self.map_ref().insert(txn, key, MapPrelim::default()),
+            Some(map_ref) => map_ref,
+        }
+    }
+
+    fn get_or_create_array_with_txn<V: Into<In>>(
+        &self,
+        txn: &mut TransactionMut,
+        key: &str,
+    ) -> ArrayRef {
+        self
+            .get_array_ref_with_txn(txn, key)
+            .unwrap_or_else(|| self.create_array_with_txn::<V>(txn, key, vec![]))
+    }
+
+    fn create_array_if_not_exist_with_txn<V: Into<In>>(
+        &self,
+        txn: &mut TransactionMut,
+        key: &str,
+        values: Vec<V>,
+    ) -> ArrayRef {
+        match self
+            .map_ref()
+            .get(txn, key)
+            .and_then(|value| value.to_yarray().cloned())
+        {
+            None => self.map_ref().insert(txn, key, ArrayPrelim::from(values)),
+            Some(array_ref) => array_ref,
+        }
+    }
+
+    fn get_str_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<String> {
+        if let Some(YrsValue::Any(Any::String(value))) = self.map_ref().get(txn, key) {
+            return Some(value.to_string());
+        }
+        None
+    }
+
+    fn get_text_ref_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<TextRef> {
+        self
+            .map_ref()
+            .get(txn, key)
+            .map(|value| value.to_ytext().cloned())?
+    }
+
+    fn get_i64_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<i64> {
+        if let Some(YrsValue::Any(Any::BigInt(value))) = self.map_ref().get(txn, key) {
+            return Some(value);
+        }
+        None
+    }
+
+    fn get_f64_with_txn<T: ReadTxn>(&self, txn: &T, key: &str) -> Option<f64> {
+        if let Some(YrsValue::Any(Any::Number(value))) = self.map_ref().get(txn, key) {
+            return Some(value);
+        }
+        None
+    }
+
+    fn get_bool_with_txn<T: ReadTxn, K: AsRef<str>>(&self, txn: &T, key: K) -> Option<bool> {
+        if let Some(YrsValue::Any(Any::Bool(value))) = self.map_ref().get(txn, key.as_ref()) {
+            return Some(value);
+        }
+        None
+    }
+
+    fn delete_with_txn(&self, txn: &mut TransactionMut, key: &str) {
+        self.map_ref().remove(txn, key);
+    }
+}
+
+impl MapRefExtension for MapRef {
+    fn map_ref(&self) -> &MapRef {
+        self
+    }
+}
+
+impl Deref for MapRefWrapper {
+    type Target = MapRef;
+    fn deref(&self) -> &Self::Target {
+        &self.map_ref
+    }
+}
+
+impl DerefMut for MapRefWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.map_ref
+    }
+}
