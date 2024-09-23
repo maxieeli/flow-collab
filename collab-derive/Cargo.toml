@@ -1,0 +1,15 @@
+[package]
+name = "collab-derive"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "1.0.109", features = ["extra-traits", "visit"] }
+yrs.workspace = true
+serde_json.workspace = true
+
+[lib]
+name = "collab_derive"
+proc-macro = true
