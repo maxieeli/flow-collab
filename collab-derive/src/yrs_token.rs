@@ -237,3 +237,96 @@ enum IdentType {
     Others,
 }
 
+impl IdentType {
+    pub fn from_ty(ast_result: &ASTResult, ty: &Type) -> Self {
+        if let Type::Path(p) = &ty {
+            let mut ident_type = match p.path.get_ident() {
+                None => IdentType::Others,
+                Some(ident) => match ident.to_string().as_ref() {
+                    "String" => IdentType::StringType,
+                    "bool" => IdentType::BoolType,
+                    "i64" => IdentType::I64Type,
+                    "f64" => IdentType::F64Type,
+                    _ => IdentType::Others,
+                },
+            };
+            if ident_type == IdentType::Others {
+                if let Some(seg) = p.path.segments.last() {
+                    if seg.ident == "HashMap" {
+                        let types = get_bracketed_value_type_from(ast_result, seg);
+                        let ident = parse_ty(types[1]).unwrap();
+                        ident_type = IdentType::HashMapType { value_type: ident };
+                    }
+
+                    if seg.ident == "Vec" {
+                        let types = get_bracketed_value_type_from(ast_result, seg);
+                        let item_type = IdentType::from_ty(ast_result, types[0]);
+                        ident_type = IdentType::ArrayType {
+                            ident_type: Box::new(item_type),
+                            inner_ty: types[0].clone(),
+                        };
+                    }
+
+                    if seg.ident == "Option" {
+                        let types = get_bracketed_value_type_from(ast_result, seg);
+                        let item_type = IdentType::from_ty(ast_result, types[0]);
+                        ident_type = IdentType::OptionType {
+                            ident_type: Box::new(item_type),
+                            inner_ty: types[0].clone(),
+                        };
+                    }
+                }
+            }
+            ident_type
+        } else {
+            IdentType::Others
+        }
+    }
+}
+
+fn get_bracketed_value_type_from<'a>(
+    ast_result: &ASTResult,
+    seg: &'a PathSegment,
+) -> Vec<&'a Type> {
+    if let syn::PathArguments::AngleBracketed(ref bracketed) = seg.arguments {
+        return match seg.ident.to_string().as_ref() {
+            "HashMap" => parse_bracketed(bracketed),
+            "Vec" => parse_bracketed(bracketed),
+            "Option" => parse_bracketed(bracketed),
+            _ => {
+                let msg = format!("Unsupported type: {}", seg.ident);
+                ast_result.error_spanned_by(&seg.ident, msg);
+                vec![]
+            },
+        };
+    }
+    vec![]
+}
+
+fn parse_bracketed(bracketed: &AngleBracketedGenericArguments) -> Vec<&Type> {
+    bracketed
+        .args
+        .iter()
+        .flat_map(|arg| {
+            if let syn::GenericArgument::Type(ref ty_in_bracket) = arg {
+                Some(ty_in_bracket)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<&syn::Type>>()
+}
+
+fn parse_ty(ty: &Type) -> Option<Ident> {
+    if let Type::Path(ref p) = ty {
+        if p.path.segments.len() != 1 {
+            return None;
+        }
+
+        return match p.path.segments.last() {
+            Some(seg) => Some(seg.ident.clone()),
+            None => return None,
+        };
+    }
+    None
+}
