@@ -1,5 +1,8 @@
 [workspace]
-members = ["collab"]
+members = [
+    "collab",
+    "collab-entity",
+]
 resolver = "2"
 
 [workspace.dependencies]
