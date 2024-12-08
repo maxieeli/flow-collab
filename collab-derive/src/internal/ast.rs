@@ -177,3 +177,101 @@ pub enum ASTStyle {
     NewType,
     Unit,
 }
+
+pub fn struct_from_ast<'a>(cx: &ASTResult, fields: &'a Fields) -> (ASTStyle, Vec<ASTField<'a>>) {
+    match fields {
+        syn::Fields::Named(fields) => (ASTStyle::Struct, fields_from_ast(cx, &fields.named)),
+        syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+            (ASTStyle::NewType, fields_from_ast(cx, &fields.unnamed))
+        },
+        syn::Fields::Unnamed(fields) => (ASTStyle::Tuple, fields_from_ast(cx, &fields.unnamed)),
+        syn::Fields::Unit => (ASTStyle::Unit, Vec::new()),
+    }
+}
+
+fn enum_from_ast<'a>(
+    cx: &ASTResult,
+    _ident: &Ident,
+    variants: &'a Punctuated<syn::Variant, Token![,]>,
+) -> Vec<ASTEnumVariant<'a>> {
+    variants
+        .iter()
+        .flat_map(|variant| {
+            let (style, fields) = struct_from_ast(cx, &variant.fields);
+            Some(ASTEnumVariant {
+                ident: variant.ident.clone(),
+                style,
+                fields,
+                original: variant,
+            })
+        })
+        .collect()
+}
+
+fn fields_from_ast<'a>(
+    ast_result: &ASTResult,
+    fields: &'a Punctuated<syn::Field, Token![,]>,
+) -> Vec<ASTField<'a>> {
+    fields
+        .iter()
+        .enumerate()
+        .flat_map(|(index, field)| ASTField::new(ast_result, field, index).ok())
+        .collect()
+}
+
+#[derive(Copy, Clone)]
+pub struct Symbol(&'static str);
+
+impl PartialEq<Symbol> for Ident {
+    fn eq(&self, word: &Symbol) -> bool {
+        self == word.0
+    }
+}
+
+impl<'a> PartialEq<Symbol> for &'a Ident {
+    fn eq(&self, word: &Symbol) -> bool {
+        *self == word.0
+    }
+}
+
+impl PartialEq<Symbol> for Path {
+    fn eq(&self, word: &Symbol) -> bool {
+        self.is_ident(word.0)
+    }
+}
+
+impl<'a> PartialEq<Symbol> for &'a Path {
+    fn eq(&self, word: &Symbol) -> bool {
+        self.is_ident(word.0)
+    }
+}
+
+impl Display for Symbol {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str(self.0)
+    }
+}
+
+pub const KEY: Symbol = Symbol("collab_key");
+
+fn get_key(
+    ast_result: &ASTResult,
+    struct_name: &Ident,
+    attrs: &[syn::Attribute],
+) -> Option<String> {
+    let mut key = None;
+    attrs
+        .iter()
+        .filter(|attr| attr.path.segments.iter().any(|s| s.ident == KEY))
+        .for_each(|attr| {
+            if let Ok(NameValue(named_value)) = attr.parse_meta() {
+                if key.is_some() {
+                    ast_result.error_spanned_by(struct_name, "Duplicate key type definition");
+                }
+                if let syn::Lit::Str(s) = named_value.lit {
+                    key = Some(s.value());
+                }
+            }
+        });
+    key
+}
