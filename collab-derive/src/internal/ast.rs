@@ -119,3 +119,61 @@ impl YrsAttribute {
         YrsAttribute { ty: ty.get() }
     }
 }
+
+fn get_yrs_nested_meta(cx: &ASTResult, attr: &syn::Attribute) -> Result<Vec<syn::NestedMeta>, ()> {
+    if attr.path != YRS {
+        return Ok(vec![]);
+    }
+    
+    match attr.parse_meta() {
+        Ok(List(meta)) => Ok(meta.nested.into_iter().collect()),
+        Ok(_) => Ok(vec![]),
+        Err(err) => {
+            cx.error_spanned_by(attr, "attribute must be str, e.g. #[yrs(xx = \"xxx\")]");
+            cx.syn_error(err);
+            Err(())
+        },
+    }
+}
+
+pub struct ASTFieldAttr<'c, T> {
+    ast_result: &'c ASTResult,
+    name: Symbol,
+    tokens: TokenStream,
+    value: Option<T>,
+}
+
+impl<'c, T> ASTFieldAttr<'c, T> {
+    pub(crate) fn none(ast_result: &'c ASTResult, name: Symbol) -> Self {
+        ASTFieldAttr {
+            ast_result,
+            name,
+            tokens: TokenStream::new(),
+            value: None,
+        }
+    }
+
+    pub(crate) fn set<A: ToTokens>(&mut self, obj: A, value: T) {
+        let tokens = obj.into_token_stream();
+        if self.value.is_some() {
+            self
+                .ast_result
+                .error_spanned_by(tokens, format!("duplicate attribute `{}`", self.name));
+        } else {
+            self.tokens = tokens;
+            self.value = Some(value);
+        }
+    }
+
+    pub(crate) fn get(self) -> Option<T> {
+        self.value
+    }
+}
+
+#[derive(Copy, Clone)]
+pub enum ASTStyle {
+    Struct,
+    Tuple,
+    NewType,
+    Unit,
+}

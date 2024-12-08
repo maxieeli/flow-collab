@@ -2,13 +2,10 @@ pub use std::fmt::Display;
 use std::ops::{Deref, DerefMut};
 use std::panic;
 use std::panic::AssertUnwindSafe;
-
 use arc_swap::ArcSwapOption;
 use std::sync::Arc;
 use std::vec::IntoIter;
-
 use serde_json::json;
-
 use tokio_stream::wrappers::WatchStream;
 use yrs::block::{ClientID, Prelim};
 use yrs::types::map::MapEvent;

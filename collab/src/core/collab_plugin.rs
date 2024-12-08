@@ -155,7 +155,7 @@ impl Plugins {
 
     pub fn remove_all(&self) -> RemovedPluginsIter {
         let inner = &*self.0;
-        let current = inner.head.swap(Node);
+        let current = inner.head.swap(None);
         inner
             .has_cloud_storage
             .store(false, std::sync::atomic::Ordering::SeqCst);
